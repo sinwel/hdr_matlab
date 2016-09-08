@@ -24,7 +24,8 @@ fid = fopen('G:\HDR\RK\tone_mapping_961.dat','w');
         % figure;plot(b*x.^2+c*x.^3+d*x.^4);
         D_float = i;
         idx = idx + 1;
-        toneTab(tabidx,idx) = int16((b*D_float.^2+c*D_float.^3+d*D_float.^4)*RefValue);
+%         toneTab(tabidx,idx) = int16((b*D_float.^2+c*D_float.^3+d*D_float.^4)*RefValue);
+        toneTab(tabidx,idx) = int16((b*D_float.^2+c*D_float.^3+d*D_float.^4)*255);
         
         if i==1-precison
             fprintf(fid,'%-4d ',toneTab(tabidx,idx));

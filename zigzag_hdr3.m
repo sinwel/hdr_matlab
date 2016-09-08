@@ -37,7 +37,8 @@ F = repmat(param.zigzagpattern, [size(in,1)/4, size(in,2)/4]);
 l_image = in.*F;
 s_image = in.*(1-F);
 
-image = l_image+s_image*times;
+% image = l_image+s_image*times;
+image = l_image+s_image;
 
 tl1 = [1 0 0; 0 0 0; 0 0 -1];
 % tl2 = [1 0 0 0 0; 0 0 0 0 0; 0 0 -1 0 0; 0 0 0 0 0; 0 0 0 0 0];
@@ -55,25 +56,29 @@ pr = abs(conv2(image, tr1, 'same'))  ;%+ abs(conv2(image, tr2, 'same')) + abs(co
 ph = abs(conv2(image, thv2,  'same')) ;%+ abs(conv2(image, thv1,  'same'));
 pv = abs(conv2(image, thv2', 'same')) ;%+ abs(conv2(image, thv1', 'same'));
 
-hl = [1 0 0; 0 0 0; 0 0 1]/2;
-hr = [0 0 1; 0 0 0; 1 0 0]/2;
-hh = [1 0 0 0 1]/2;
+% hl = [1 0 0; 0 0 0; 0 0 1]/2;
+% hr = [0 0 1; 0 0 0; 1 0 0]/2;
+% hh = [1 0 0 0 1]/2;
+
+hl = [1 0 0; 0 0 0; 0 0 1];
+hr = [0 0 1; 0 0 0; 1 0 0];
+hh = [1 0 0 0 1];
 
 fl = conv2(image, hl, 'same');
 fr = conv2(image, hr, 'same');
 fh = conv2(image, hh, 'same');
 fv = conv2(image, hh', 'same');
 
-FF = pl>pr;
-fg = FF.*fr+(1-FF).*fl;
+FF = pl<pr;
+fg = (1-FF).*fr+FF.*fl;
 FF = ph>pv;
 frb= FF.*fv+(1-FF).*fh;
 
 TF = repmat([1 0; 0 1], [size(in,1)/2, size(in,2)/2]);
 f_image = fg.*TF + frb.*(1-TF);
 
-l_ref_image = l_image + f_image.*(1-F);
-s_ref_image = s_image*times + f_image.*(F);
+l_ref_image = l_image       + floor(f_image/2).*(1-F);
+s_ref_image = s_image*times + floor(f_image/2).*(F)*times;
 
 % % debug %%
 if 1
@@ -136,23 +141,54 @@ if 1
     
     g_l = conv2(I_g, hl_, 'same');
     g_r = conv2(I_g, hr_, 'same');
-	g_choose_r = g_mode_l > g_mode_r;
-    fushion_g= g_choose_r.*g_r + (1-g_choose_r).*g_l;
+	g_choose_l = g_mode_l < g_mode_r;
+    fushion_g= (1-g_choose_l).*g_r + g_choose_l.*g_l;
     
     
     fushion = fushion_r + fushion_b + fushion_g;
-    PP = 8*(F) + (1-F); % 长曝光插值是用short得到的需要倍乘8，短曝光是long插值得到反而不需要。
-    find((fushion.*PP)~=(f_image*2))
+    PP = (F) + (1-F); % 长曝光插值是用short得到的需要倍乘8，短曝光是long插值得到反而不需要。
+    find((fushion.*PP)~=(f_image))
 
 
-    ll_image = l_image + (fushion/2).*(1-F); % orginal long + orignal(short)but interpolation long.
-    ss_image = (s_image + (fushion/2).*(F))*times;
+    ll_image = l_image + floor(fushion/2).*(1-F); % orginal long + orignal(short)but interpolation long.
+    ss_image = s_image*times + floor(fushion/2).*(F)*times;
 
     find(ll_image~=l_ref_image)
     find(ss_image~=s_ref_image)
 
 end
+%%{
 
+% 
+l_ref_image = max(l_ref_image,0);
+s_ref_image = max(s_ref_image,0);
+
+
+for j=7%33%size(l_ref_image,1)/32
+    for i=12%1:size(l_ref_image,2)/64
+        if 1;%i >= 30
+            name_str =  sprintf( '%s_%04d-%04d.dat', 'long_short_image_matlab', j-1,i-1);
+            fidw = fopen(name_str,'w');
+            l_ref_image_blk = l_ref_image(1+32*(j-1):32*j,1+64*(i-1):64*i);
+            for ii=1:32
+                for jj=1:64
+                    fprintf(fidw,'%6d, ',l_ref_image_blk(ii,jj));
+                end
+                fprintf(fidw,'\n');
+            end
+            s_ref_image_blk = s_ref_image(1+32*(j-1):32*j,1+64*(i-1):64*i);
+            for ii=1:32
+                for jj=1:64
+                    fprintf(fidw,'%6d, ',s_ref_image_blk(ii,jj));
+                end
+                fprintf(fidw,'\n');
+            end
+            fclose(fidw);
+        end
+    end
+   
+end
+%%}%
 % -------------------------------------------------------------------------
 
 if 0%get(handles.checkbox2, 'Value')
@@ -173,7 +209,7 @@ end
 % -------------------------------------------------------------------------
 % use difference for tonning the image
 % 
-% 
+
 D = (s_ref_image-l_ref_image);
 D = abs(D);
 D = D*(2^param.bits/(param.noise*param.exptimes));
@@ -201,25 +237,91 @@ D_scale_ = (b*D_float.^2+c*D_float.^3+d*D_float.^4)*normlizeValue;
 D_scale_ = min(D_scale_,normlizeValue);
 D_scale_ = max(D_scale_,0);
 
-
-
-
-
-D_scale = max(D_scale, double(s_ref_image>0.9*normlizeValue)*normlizeValue );
-D_scale = min(D_scale, (1 - double(s_ref_image < (0.85*normlizeValue)/times))*normlizeValue);
+% D_scale = max(D_scale, double(s_ref_image>0.9*normlizeValue)*normlizeValue );
+% D_scale = min(D_scale, (1 - double(s_ref_image < (0.85*normlizeValue)/times))*normlizeValue);
 
 % t=fspecial('gaussian',[9 9], 2);
 % t = ones(3,3)/9;
 % t = [1 0 1 0 1; 0 0 0 0 0; 1 0 1 0 1; 0 0 0 0 0; 1 0 1 0 1]/9;
 % t = [1];
 % D = conv2(D, t, 'same');
-D_adj = ordfilt2(D_scale, 9, ones(3,3));
-% figure;imshow(D);
-% out = l_ref_image.*(1-(D_adj/normlizeValue))+s_ref_image.*(D_adj/normlizeValue);
-out = (l_ref_image.*(normlizeValue-D_adj)+s_ref_image.*D_adj)/normlizeValue;
+if 1 % skip the block gap by filling zeros. block size is 32x64
+    height_h = size(D_scale,1);
+    width_w = size(D_scale,2);
+    Blk_w  = 64;
+    Blk_h  = 32;
+    for ysplit=1:Blk_h:height_h
+        for xsplit=1:Blk_w:width_w
+            
+            D_scale_blk = D_scale(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w));
+            block_single = ordfilt2(D_scale_blk, 9, ones(3,3));
+            l_block      = l_ref_image(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w));
+            s_block      = s_ref_image(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w));
+
+            D_adj(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w)) = block_single;
+            out_block   = uint16((l_block.*(255-block_single)+s_block.*block_single )/256);
+            out(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w)) = out_block;
+            %if (xsplit >= (Blk_w*30)) && (ysplit <= (Blk_w*2)) 
+            %if  (ysplit >= (Blk_h*33)) && (ysplit < (Blk_h*34))
+            if  (ysplit == (Blk_h*6+1)) && (xsplit == (Blk_w*11+1))    
+                name_str =  sprintf( '%s_%04d-%04d.dat', 'weight_matlab', int8(ysplit/Blk_h),int8(xsplit/Blk_w));
+                fidw = fopen(name_str,'w');
+                for ii=1:min(Blk_h,height_h - ysplit+1)
+                    for jj=1:min(Blk_w,width_w - xsplit+1)
+                        fprintf(fidw,'%6d, ',D_scale_blk(ii,jj));
+                    end
+                    fprintf(fidw,'\n');
+                end            
+                fclose(fidw);
+                
+                
+                name_str1 =  sprintf( '%s_%04d-%04d.dat', 'weight_filter_matlab', int8(ysplit/Blk_h),int8(xsplit/Blk_w));
+                fidw = fopen(name_str1,'w');
+                for ii=1:min(Blk_h,height_h - ysplit+1)
+                    for jj=1:min(Blk_w,width_w - xsplit+1)
+                        fprintf(fidw,'%6d, ',block_single(ii,jj));
+                    end
+                    fprintf(fidw,'\n');
+                end            
+                fclose(fidw);
+
+                name_hdr =  sprintf( '%s_%04d-%04d.dat', 'hdr_matlab', int8(ysplit/Blk_h),int8(xsplit/Blk_w));
+                fidw = fopen(name_hdr,'w');
+                for ii=1:min(Blk_h,height_h - ysplit+1)
+                    for jj=1:min(Blk_w,width_w - xsplit+1)
+                        fprintf(fidw,'%6d, ',out_block(ii,jj));
+                    end
+                    fprintf(fidw,'\n');
+                end            
+                fclose(fidw);
+            end
+        end
+    end
+    
+else
+    D_adj_good = ordfilt2(D_scale, 9, ones(3,3));
+
+    % figure;imshow(D);
+    % out = l_ref_image.*(1-(D_adj/normlizeValue))+s_ref_image.*(D_adj/normlizeValue);
+    out = (l_ref_image.*(256-D_adj)+s_ref_image.*D_adj)/256;
+end
 out_demosic = demosaic(uint16(out), 'grbg');
 imwrite(uint16(out_demosic*64), 'out16bit.png');
 figure;imshow(double(demosaic(uint8(out*255/1023), 'grbg'))/255);
+
+fid_vecc = fopen('G:\CEVA-XM4_v1.6.1\IMX362HDR\data\raw_2016x1504_Out.raw');
+image_vecc = fread(fid_vecc, [2016 1504], 'uint16')';
+% image_vecc_align = image_vecc([3:end,1:2],:); 
+image_vecc_align = image_vecc;
+fclose(fid_vecc);
+
+
+image_vecc_align_demosic = demosaic(uint16(image_vecc_align), 'grbg');
+imwrite(uint16(image_vecc_align_demosic*64), 'image_vecc_align16bit.png');
+figure;imshow(double(demosaic(uint8(image_vecc_align*255/1023), 'grbg'))/255);
+
+
+
 if 0%get(handles.checkbox5, 'Value')
     L = ordfilt2(out, 9, ones(3,3));
     L = L/(param.exptimes);

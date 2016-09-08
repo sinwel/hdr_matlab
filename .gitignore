@@ -1,1 +1,7 @@
 *.bak
+*.dat
+*.asv
+*.png
+*.mat
+*.pgm
+*.fig

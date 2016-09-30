@@ -1,9 +1,11 @@
 function imx362_zigzag_hdr(filename);
+clear all;
 if nargin < 1
 %     filename = './RK/hdrTest1.raw';
 %     filename = 'raw_2016x1504.raw';
     filename_tr = 'raw_2016x1504_new.raw';
 end
+
 cfg.width = 2016;
 cfg.height = 1504;
 % cfg.width = 4032;
@@ -60,3 +62,4 @@ image  = image_tr;
 % end
 % fclose(fidw);
 zigzag_hdr3(image, cfg, cfg.exptimes);
+% zigzag_hdr3_float(image, cfg, cfg.exptimes);

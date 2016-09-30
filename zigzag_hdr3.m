@@ -165,7 +165,7 @@ s_ref_image = max(s_ref_image,0);
 
 
 for j=7%33%size(l_ref_image,1)/32
-    for i=12%1:size(l_ref_image,2)/64
+    for i=11%1:size(l_ref_image,2)/64
         if 1;%i >= 30
             name_str =  sprintf( '%s_%04d-%04d.dat', 'long_short_image_matlab', j-1,i-1);
             fidw = fopen(name_str,'w');
@@ -215,36 +215,20 @@ D = abs(D);
 D = D*(2^param.bits/(param.noise*param.exptimes));
 D = min(D,normlizeValue);
 
-%% fix point
-% debug 
-if 1
-    tone_map = importdata('tone_mapping_961.dat');    
-    tone_map = reshape(tone_map',1,numel(tone_map));
-    table_map = tone_map(1:961);
-    D_scale = table_map(D+1);
+% -------------------------------------------------------------------------
+% do MAX(3,3) filter
+bLUTfirst = 0;
+tone_map = importdata('G:/HDR/longshort_mapping_single.dat');    
 
+tone_map = reshape(tone_map',1,numel(tone_map));
+table_map = tone_map(1:961);
+
+if bLUTfirst
+     D_scale = table_map(D+1);
+else   
+     D_scale = D;  
 end
-%% Float data
-d = 1;
-b = 3+d;
-c = -2-2*d;
 
-% x = 0:0.01:1;
-% figure;plot(b*x.^2+c*x.^3+d*x.^4);
-% D = b*D.^2+c*D.^3+d*D.^4;
-D_float = D/normlizeValue;
-D_scale_ = (b*D_float.^2+c*D_float.^3+d*D_float.^4)*normlizeValue;
-D_scale_ = min(D_scale_,normlizeValue);
-D_scale_ = max(D_scale_,0);
-
-% D_scale = max(D_scale, double(s_ref_image>0.9*normlizeValue)*normlizeValue );
-% D_scale = min(D_scale, (1 - double(s_ref_image < (0.85*normlizeValue)/times))*normlizeValue);
-
-% t=fspecial('gaussian',[9 9], 2);
-% t = ones(3,3)/9;
-% t = [1 0 1 0 1; 0 0 0 0 0; 1 0 1 0 1; 0 0 0 0 0; 1 0 1 0 1]/9;
-% t = [1];
-% D = conv2(D, t, 'same');
 if 1 % skip the block gap by filling zeros. block size is 32x64
     height_h = size(D_scale,1);
     width_w = size(D_scale,2);
@@ -254,21 +238,29 @@ if 1 % skip the block gap by filling zeros. block size is 32x64
         for xsplit=1:Blk_w:width_w
             
             D_scale_blk = D_scale(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w));
-            block_single = ordfilt2(D_scale_blk, 9, ones(3,3));
+            block_single_idx = ordfilt2(D_scale_blk, 9, ones(3,3));
+%             avg_h = [1 2 1; 2 4 2; 1 2 1]/16;
+%             block_single = conv2(D_scale_blk, avg_h, 'same'); 
+            if bLUTfirst
+                block_single = block_single_idx; 
+            else
+                block_single = table_map(block_single_idx+1);
+            end
+
             l_block      = l_ref_image(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w));
             s_block      = s_ref_image(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w));
 
             D_adj(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w)) = block_single;
-            out_block   = uint16((l_block.*(255-block_single)+s_block.*block_single )/256);
+            out_block   = uint16((l_block.*(256-block_single)+s_block.*block_single )/256);
             out(ysplit:min(ysplit+Blk_h-1,height_h),xsplit:min(xsplit+Blk_w-1,width_w)) = out_block;
-            %if (xsplit >= (Blk_w*30)) && (ysplit <= (Blk_w*2)) 
-            %if  (ysplit >= (Blk_h*33)) && (ysplit < (Blk_h*34))
-            if  (ysplit == (Blk_h*6+1)) && (xsplit == (Blk_w*11+1))    
+            x_pos = 30;
+            y_pos = 1;
+            if  (ysplit == (Blk_h*y_pos+1)) && (xsplit == (Blk_w*x_pos+1))    
                 name_str =  sprintf( '%s_%04d-%04d.dat', 'weight_matlab', int8(ysplit/Blk_h),int8(xsplit/Blk_w));
                 fidw = fopen(name_str,'w');
                 for ii=1:min(Blk_h,height_h - ysplit+1)
                     for jj=1:min(Blk_w,width_w - xsplit+1)
-                        fprintf(fidw,'%6d, ',D_scale_blk(ii,jj));
+                        fprintf(fidw,'%6d,',D_scale_blk(ii,jj));
                     end
                     fprintf(fidw,'\n');
                 end            
@@ -279,7 +271,7 @@ if 1 % skip the block gap by filling zeros. block size is 32x64
                 fidw = fopen(name_str1,'w');
                 for ii=1:min(Blk_h,height_h - ysplit+1)
                     for jj=1:min(Blk_w,width_w - xsplit+1)
-                        fprintf(fidw,'%6d, ',block_single(ii,jj));
+                        fprintf(fidw,'%6d,',block_single(ii,jj));
                     end
                     fprintf(fidw,'\n');
                 end            
@@ -289,7 +281,7 @@ if 1 % skip the block gap by filling zeros. block size is 32x64
                 fidw = fopen(name_hdr,'w');
                 for ii=1:min(Blk_h,height_h - ysplit+1)
                     for jj=1:min(Blk_w,width_w - xsplit+1)
-                        fprintf(fidw,'%6d, ',out_block(ii,jj));
+                        fprintf(fidw,'%6d,',out_block(ii,jj));
                     end
                     fprintf(fidw,'\n');
                 end            
@@ -304,29 +296,39 @@ else
     % figure;imshow(D);
     % out = l_ref_image.*(1-(D_adj/normlizeValue))+s_ref_image.*(D_adj/normlizeValue);
     out = (l_ref_image.*(256-D_adj)+s_ref_image.*D_adj)/256;
+    
 end
-out_demosic = demosaic(uint16(out), 'grbg');
-imwrite(uint16(out_demosic*64), 'out16bit.png');
-figure;imshow(double(demosaic(uint8(out*255/1023), 'grbg'))/255);
-
-fid_vecc = fopen('G:\CEVA-XM4_v1.6.1\IMX362HDR\data\raw_2016x1504_Out.raw');
-image_vecc = fread(fid_vecc, [2016 1504], 'uint16')';
-% image_vecc_align = image_vecc([3:end,1:2],:); 
-image_vecc_align = image_vecc;
-fclose(fid_vecc);
-
-
-image_vecc_align_demosic = demosaic(uint16(image_vecc_align), 'grbg');
-imwrite(uint16(image_vecc_align_demosic*64), 'image_vecc_align16bit.png');
-figure;imshow(double(demosaic(uint8(image_vecc_align*255/1023), 'grbg'))/255);
 
 
 
-if 0%get(handles.checkbox5, 'Value')
-    L = ordfilt2(out, 9, ones(3,3));
-    L = L/(param.exptimes);
-    L = normlizeValue*(1-(1 - L/normlizeValue).^4);
-    L = min(L,normlizeValue);
+
+% -------------------------------------------------------------------------
+% clip nonlinear
+% D_scale = max(D_scale, double(s_ref_image>0.9*normlizeValue)*normlizeValue );
+% D_scale = min(D_scale, (1 - double(s_ref_image < (0.85*normlizeValue)/times))*normlizeValue);
+% -------------------------------------------------------------------------
+
+
+
+
+imwrite(uint16(demosaic(uint16(out), 'grbg')*64), 'out16bit_nowdr.png');
+
+
+% thumb for WDR
+% thumb = image_vecc_align;
+% for m=1:8:1054
+%     for n=1:8:2016
+%         blk8x8 = image_vecc_align(m:m+7,n:n+7);
+%         thumb(m/8+1,n/8+1) = mean(blk8x8(:));
+%     end
+% end
+
+if 1%get(handles.checkbox5, 'Value')
+    %{
+    L = ordfilt2(double(out), 9, ones(3,3));
+    L = L/(param.exptimes*normlizeValue);
+    L = (1-(1 - L).^4);
+    L = min(L,1);
 %     t = fspecial('gaussian',[5 5], 0.9);
 %     L = conv2(L,t,'same');
 
@@ -340,7 +342,7 @@ if 0%get(handles.checkbox5, 'Value')
 %     fL = L;
     X = min(fL, L+0.125);
     X = max(X, L-0.125);
-%     figure;imshow(abs(X));
+    figure;imshow(abs(X));
 %     figure;imshow(abs(L-fL));
 
     
@@ -360,6 +362,68 @@ if 0%get(handles.checkbox5, 'Value')
     d = (k-1) / ((1+n)*x0^n - 2*(1+2*n)*x0^(2*n) + (1+3*n)*x0^(3*n));
     S = 1+d*X.^(n)-2*d*X.^(2*n)+d.*X.^(3*n);
 
-    out = out.*S;
+    out1 = double(out).*S;
+    out_demosic = demosaic(uint16(out1), 'grbg');
+    imwrite(uint16(out_demosic*64), 'out16bit_cmodel.png');
+    %}
+    
+    %%
+    % 16x16 block downscale
+    scale_gap = 16;
+    
+    % 128x128 block downscale
+    scale_gap_x = 64;
+    scale_gap_y = 32;
+   
+    clear thumb;
+    for m=1:scale_gap_y:1504
+        for n=1:scale_gap_x:2016
+            out_blk = out(m:min(m+scale_gap_y-1,1504),n:min(n+scale_gap_x-1,2016));
+            thumb(floor(m/scale_gap_y)+1,floor(n/scale_gap_x)+1) = mean(out_blk(:));
+        end
+    end
+%     thumb_S = thumb/(param.exptimes*normlizeValue);
+%     thumb_S = 1-(1-thumb_S).^4;
+%     thumb_S = min(thumb_S,1);
+    for Xidx=0:960
+       clip_tab(Xidx+1) = floor((1-(1-Xidx/961).^4)*960);
+    end
+    thumb_S = clip_tab(floor(thumb/param.exptimes))*param.exptimes;
+    thumb_S = thumb;
+%     t = fspecial('gaussian',[1 9], 1);
+%     thumb_S = conv2(thumb_S, t, 'same');
+%     thumb_S = conv2(thumb_S, t', 'same');
+    tt = [1 2 1; 2 4 2; 1 2 1]/16;
+    thumb_S = floor(conv2(thumb_S, tt, 'same'));    
+
+    thumb_S = floor(imresize(thumb_S, size(out),'bilinear'));
+%     thumb_S  = min(thumb_S, thumb_S+(0.125*960*param.exptimes));
+%     thumb_S1 = max(thumb_S, thumb_S-(0.125*960*param.exptimes));
+    
+figure;imshow(thumb_S1/(960*param.exptimes));
+    k = fix(param.exptimes);
+%     if param.wdrgain
+        k = min(k,24);
+%         k = min(k,param.wdrgain);
+%     else
+%         k = fix(param.exptimes/2);
+%     end
+    wdr_table = importdata('table_from_LN.txt');
+%     n= 0.05;
+%     x0 = 1/k/32;
+%     d = (k-1) / ((1+n)*x0^n - 2*(1+2*n)*x0^(2*n) + (1+3*n)*x0^(3*n));
+%     S = 1+d*thumb_S1.^(n)-2*d*thumb_S1.^(2*n)+d.*thumb_S1.^(3*n);
+    ttable = wdr_table(k,:);
+    
+    table_idx = floor(out/param.exptimes)+1;
+%     bfactor   = rem(out,param.exptimes);
+%     out2_t     = ttable(table_idx).*double(param.exptimes - bfactor ) + ttable(table_idx+1).*double(bfactor);
+%     out22      = out2_t/param.exptimes;
+    out2 = double(out).*double(ttable(table_idx))/(param.exptimes*32);
+    
+    
+    out_demosic2 = demosaic(uint16(out2), 'grbg');
+   
+    imwrite(uint16(out_demosic2*64), 'out16bit_cmodel2.png');
 end
 
